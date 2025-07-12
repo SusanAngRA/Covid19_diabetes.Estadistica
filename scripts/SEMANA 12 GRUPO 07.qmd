@@ -1,0 +1,226 @@
+---
+title: "semana_12"
+author: "GRUPO_07"
+format: html
+editor: visual
+---
+
+## Cargar los paquetes
+
+```{r}
+#install.packages("performance")
+#install.packages("cardx")
+install.packages("broom.helpers")
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(rio)
+library(gtsummary)
+library(car)
+library(survival)
+library(performance)
+library(cardx)
+library(broom.helpers)
+
+```
+
+## 1. Análisis univariado y multivariado en una regresión logística
+
+### 1.1 El dataset para este ejercicio
+
+Para el análisis multivariado en un modelo de regresión logística, se empleará el dataset `hipert_covid`. Este conjunto de datos incluye información de 234 pacientes diagnosticados con COVID-19 y diabetes mellitus. Las variables registradas comprenden el desenlace hospitalario (vivo o fallecido), edad (en años), sexo (femenino o masculino), presencia de hipertensión arterial, valores de presión sanguínea, frecuencia cardiaca y frecuencia respiratoria, entre otras variables de relevancia clínica.
+
+```{r}
+covid_diab<- import(here("data", "covid_19_diabetes.csv"))
+```
+
+```{r}
+head(covid_diab)
+```
+
+### 2.2 El análisis univariado
+
+```{r}
+covid_diab_1 <- covid_diab |> 
+  mutate(
+    desenla_fallecido = factor(desenla_fallecido),
+    latino = factor(latino)
+  ) |>
+  mutate(
+    desenla_fallecido = relevel(desenla_fallecido, ref = "No"),
+    latino = relevel(latino, ref = "No")
+  ) |>
+  na.omit()
+```
+
+```{r}
+tabla_univ <- covid_diab_1 |> 
+  tbl_uvregression(
+    include = c(Edad, Presión_arterial_media, Temperatura, latino),
+    y = desenla_fallecido,
+    method = glm,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    hide_n = TRUE,
+    add_estimate_to_reference_rows = FALSE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      Edad ~ "Edad (años)",
+      Presión_arterial_media ~ "Presión arterial media (mmHg)",
+      Temperatura ~ "Temperatura (°C)",
+      latino ~ "Latino"
+    )
+  ) |> 
+  bold_labels() |> 
+  bold_p(t = 0.05) |> 
+  modify_header(estimate = "*OR no ajustado", p.value = "Valor P*")
+```
+
+En esta tabla, los resultados se expresan como odds ratios no ajustados (OR) con sus respectivos intervalos de confianza al 95% y valores p.
+
+```{r}
+tabla_univ
+```
+
+### 2.3 El análisis multivariado
+
+**Paso 1. Ajuste del modelo inicial**
+
+Ajustamos un modelo de regresión logística binaria que incluya todas las variables candidatas
+
+```{r}
+modelo_multi <- glm(
+  desenla_fallecido ~ Edad + Presión_arterial_media + Temperatura + latino,
+  family = binomial(link = "logit"),
+  data = covid_diab_1
+)
+```
+
+**Paso 2a. Realizamos la selección de variables** usando la técnica Eliminación hacia atrás (Backward elimination).}
+
+```{r}
+multi_backward <- modelo_multi |>
+  step(direction = "backward", trace = FALSE)
+```
+
+**Paso 2b. Realizamos la selección de variables** usando la técnica Selección hacia adelante (Forward selection).
+
+```{r}
+multi_forward <- modelo_multi |>
+  step(direction = "forward", trace = FALSE)
+```
+
+**Paso 3c. Realizamos la selección de variables** usando la técnica Selección paso a paso (Stepwise selection).
+
+```{r}
+multi_stepwise <- modelo_multi |>
+  step(direction = "both", trace = FALSE)
+```
+
+**Paso 3. Estimados el AIC para los modelos.**
+
+```{r}
+summary(multi_backward)
+```
+
+```{r}
+summary(multi_forward)
+```
+
+```{r}
+summary(multi_stepwise )
+```
+
+### **2.4 Conclusión**
+
+### 2.5 Evaluación de colinealidad
+
+Finalmente, evaluamos la colinealidad usando la función `check_collinearity()` del paquete `performance`.
+
+```{r}
+performance::check_collinearity(multi_backward, ci = NULL)
+```
+
+```{r}
+performance::check_collinearity(multi_forward, ci = NULL)
+```
+
+```{r}
+performance::check_collinearity(multi_stepwise, ci = NULL)
+```
+
+### **2.6 Conclusión**
+
+### 2.7 Modelo final
+
+## 3 Reporte del análisis univariado y multivariado
+
+Como en las sesiones anteriores, reportaremos los resultados del modelo final de regresión logística.
+
+Tabla para los resultados de la regresión univariado (no ajustado)
+
+```{r}
+abla_univ <- covid_diab_1 |> 
+  tbl_uvregression(
+    include = c(Edad, Presión_arterial_media, Temperatura, latino),
+    y = desenla_fallecido,
+    method = glm,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    hide_n = TRUE,
+    add_estimate_to_reference_rows = FALSE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      Edad ~ "Edad (años)",
+      Presión_arterial_media ~ "Presión arterial media (mmHg)",
+      Temperatura ~ "Temperatura (°C)",
+      latino ~ "Latino"
+    )
+  ) |> 
+  bold_labels() |> 
+  bold_p(t = 0.05) |> 
+  modify_header(estimate = "*OR no ajustado", p.value = "Valor P*")
+```
+
+Tabla para los resultados de la regresión multivariable (ajustado)
+
+```{r}
+tabla_multi <- modelo_multi |> 
+  tbl_regression(
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      Edad ~ "Edad (años)",
+      Presión_arterial_media ~ "Presión arterial media (mmHg)",
+      Temperatura ~ "Temperatura (°C)",
+      latino ~ "Latino"
+    )
+  ) |> 
+  bold_labels() |> 
+  bold_p(t = 0.05) |> 
+  modify_header(estimate = "*OR ajustado", p.value = "Valor P*")
+```
+
+La tabla final la construimos usando la función `tbl_merge()`. De modo que la tabla del análisis univariado o no ajustado y multivariado o ajustado, se muestren lado a lado.
+
+```{r}
+tabla_final <- 
+  tbl_merge(
+    list(tabla_univ, tabla_multi),
+    tab_spanner = c("**Univariado**", "**Multivariado**")
+  )
+```
+
+```{r}
+tabla_final
+```
+
+### **3.1 ¿Cómo interpretar?**
